@@ -465,6 +465,124 @@ void test_view(size_t const collection_size, size_t const dimensions) {
     printf("Test: View - PASSED\n");
 }
 
+/**
+ *  Expects every call that needs the key-to-vector table to report an error on an index with key lookups off.
+ */
+void expect_key_lookups_rejected(usearch_index_t index, size_t const dimensions) {
+    usearch_error_t error = NULL;
+    float* vector = (float*)malloc(dimensions * sizeof(float));
+    expect(vector, "Failed to allocate memory");
+
+    expect(!usearch_contains(index, 0, &error), "Contains must fail without key lookups");
+    expect(error, "Contains must report an error without key lookups");
+    error = NULL;
+    expect_eq(usearch_count(index, 0, &error), 0, "Count must fail without key lookups");
+    expect(error, "Count must report an error without key lookups");
+    error = NULL;
+    expect_eq(usearch_get(index, 0, 1, vector, usearch_scalar_f32_k, &error), 0, "Get must fail without key lookups");
+    expect(error, "Get must report an error without key lookups");
+    error = NULL;
+    expect_eq(usearch_remove(index, 0, &error), 0, "Remove must fail without key lookups");
+    expect(error, "Remove must report an error without key lookups");
+    error = NULL;
+    expect_eq(usearch_rename(index, 0, 1, &error), 0, "Rename must fail without key lookups");
+    expect(error, "Rename must report an error without key lookups");
+
+    free(vector);
+}
+
+/**
+ *  This test checks that key lookups can be turned off before viewing or loading an index. Searching must still work,
+ *  while the calls that need the key-to-vector table must report errors instead of crashing. The setting can only be
+ *  changed while the index is empty.
+ */
+void test_key_lookups(size_t const collection_size, size_t const dimensions) {
+    printf("Test: Key Lookups... %zu vectors, %zu dimensions \n", collection_size, dimensions);
+
+    usearch_error_t error = NULL;
+    usearch_init_options_t opts = create_options(dimensions);
+    usearch_index_t index = usearch_init(&opts, &error);
+    expect(!error, error);
+    usearch_reserve(index, collection_size, &error);
+    expect(!error, error);
+
+    // Add vectors
+    float* data = create_vectors(collection_size, dimensions);
+    for (size_t i = 0; i < collection_size; ++i) {
+        usearch_add(index, (usearch_key_t)i, data + i * dimensions, usearch_scalar_f32_k, &error);
+        expect(!error, error);
+    }
+
+    // The setting can't change once the index has entries
+    usearch_change_key_lookups(index, false, &error);
+    expect(error, "Key lookups must not change on a non-empty index");
+    error = NULL;
+    expect(usearch_contains(index, 0, &error), "Key lookups must stay enabled");
+    expect(!error, error);
+
+    usearch_save(index, "tmp.usearch", &error);
+    expect(!error, error);
+    usearch_free(index, &error);
+    expect(!error, error);
+
+    usearch_key_t* keys = (usearch_key_t*)malloc(collection_size * sizeof(usearch_key_t));
+    usearch_distance_t* distances = (usearch_distance_t*)malloc(collection_size * sizeof(usearch_distance_t));
+    expect(keys && distances, "Failed to allocate memory");
+
+    // View and load with key lookups off, with and without initial options
+    for (int pass = 0; pass != 3; ++pass) {
+        index = usearch_init(pass == 2 ? NULL : &opts, &error);
+        expect(!error, error);
+        usearch_change_key_lookups(index, false, &error);
+        expect(!error, error);
+        if (pass == 1)
+            usearch_load(index, "tmp.usearch", &error);
+        else
+            usearch_view(index, "tmp.usearch", &error);
+        expect(!error, error);
+        expect_eq(usearch_size(index, &error), collection_size, "Wrong size after view or load");
+
+        for (size_t i = 0; i < collection_size; ++i) {
+            size_t found = usearch_search(index, data + i * dimensions, usearch_scalar_f32_k, collection_size, keys,
+                                          distances, &error);
+            expect(!error, error);
+            expect(found >= 1, "Vector not found");
+            for (size_t j = 0; j < found; ++j)
+                expect(keys[j] < collection_size, "Search returned an unknown key");
+        }
+        expect_key_lookups_rejected(index, dimensions);
+
+        usearch_change_key_lookups(index, true, &error);
+        expect(error, "Key lookups must not change on a non-empty index");
+        error = NULL;
+        usearch_free(index, &error);
+        expect(!error, error);
+    }
+
+    // Lookups can be turned back on after clearing the index
+    index = usearch_init(&opts, &error);
+    expect(!error, error);
+    usearch_change_key_lookups(index, false, &error);
+    expect(!error, error);
+    usearch_load(index, "tmp.usearch", &error);
+    expect(!error, error);
+    usearch_clear(index, &error);
+    expect(!error, error);
+    usearch_change_key_lookups(index, true, &error);
+    expect(!error, error);
+    usearch_add(index, 42, data, usearch_scalar_f32_k, &error);
+    expect(!error, error);
+    expect(usearch_contains(index, 42, &error), "Key lookups must work after re-enabling");
+    expect(!error, error);
+
+    free(keys);
+    free(distances);
+    free(data);
+    usearch_free(index, &error);
+    remove("tmp.usearch");
+    printf("Test: Key Lookups - PASSED\n");
+}
+
 void test_mini_float_quantizations(size_t const collection_size, size_t const dimensions) {
     printf("Test: Mini-float quantizations... %zu vectors, %zu dimensions\n", collection_size, dimensions);
     usearch_scalar_kind_t kinds[] = {
@@ -521,6 +639,7 @@ int main(int argc, char const* argv[]) {
             test_remove_vector(collection_sizes[index], dimensions[jdx]);
             test_save_load(collection_sizes[index], dimensions[jdx]);
             test_view(collection_sizes[index], dimensions[jdx]);
+            test_key_lookups(collection_sizes[index], dimensions[jdx]);
             test_mini_float_quantizations(collection_sizes[index], dimensions[jdx]);
         }
     }

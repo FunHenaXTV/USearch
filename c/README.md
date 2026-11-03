@@ -64,6 +64,15 @@ usearch_load(index, "index.usearch", &error);
 usearch_view(index, "index.usearch", &error);
 ```
 
+If you only search a loaded or viewed index, you can skip building the key-to-vector table.
+After that, `usearch_contains`, `usearch_count`, `usearch_get`, `usearch_remove` and `usearch_rename` report errors:
+
+```c
+usearch_index_t index = usearch_init(&opts, &error);
+usearch_change_key_lookups(index, false, &error); // only while the index is empty
+usearch_view(index, "index.usearch", &error);
+```
+
 Before saving to disk, you can determine exactly how much disk space the index will take:
 
 ```c

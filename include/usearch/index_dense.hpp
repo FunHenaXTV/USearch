@@ -763,6 +763,23 @@ class index_dense_gt {
     void change_expansion_add(std::size_t n) { config_.expansion_add = n; }
     void change_expansion_search(std::size_t n) { config_.expansion_search = n; }
 
+    /**
+     *  @brief  Turns the key-to-slot lookup table on or off, like `index_dense_config_t::enable_key_lookups`.
+     *          Only possible while the index is empty, for example right before `load` or `view`,
+     *          as the table isn't rebuilt here.
+     *  @return `false` if the index has entries, in which case nothing changes.
+     */
+    bool try_change_key_lookups(bool enabled) {
+        if (config_.enable_key_lookups == enabled)
+            return true;
+        if (typed_ && typed_->size())
+            return false;
+        unique_lock_t lookup_lock(slot_lookup_mutex_);
+        slot_lookup_.reset();
+        config_.enable_key_lookups = enabled;
+        return true;
+    }
+
     member_citerator_t cbegin() const { return typed_->cbegin(); }
     member_citerator_t cend() const { return typed_->cend(); }
     member_iterator_t begin() { return typed_->begin(); }

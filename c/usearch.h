@@ -347,6 +347,23 @@ USEARCH_EXPORT void usearch_change_metric(usearch_index_t index, usearch_metric_
                                           usearch_metric_kind_t kind, usearch_error_t* error);
 
 /**
+ *  @brief Turns the key-to-vector lookup table on or off. It is on by default.
+ *
+ *  With lookups off, `usearch_load` and `usearch_view` skip building the table, which saves time
+ *  and memory, and `usearch_search` works as usual. But `usearch_contains`, `usearch_count`,
+ *  `usearch_get`, `usearch_remove` and `usearch_rename` report an error, and `usearch_add` no
+ *  longer rejects duplicate keys. The setting isn't saved with the index.
+ *
+ *  Can only be changed while the index is empty: after `usearch_init` or `usearch_clear`,
+ *  and before `usearch_add`, `usearch_load` or `usearch_view`.
+ *
+ *  @param[inout] index The handle to the USearch index to be modified.
+ *  @param[in] enabled Whether to maintain the key-to-vector lookup table.
+ *  @param[out] error Pointer to a string where the error message will be stored, if an error occurs.
+ */
+USEARCH_EXPORT void usearch_change_key_lookups(usearch_index_t index, bool enabled, usearch_error_t* error);
+
+/**
  *  @brief Adds a vector with a key to the index.
  *  @param[inout] index The handle to the USearch index to be populated.
  *  @param[in] key The key associated with the vector.

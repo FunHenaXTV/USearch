@@ -136,6 +136,15 @@ search_result_t search_(index_dense_t* index, void const* vector, scalar_kind_t 
     }
 }
 
+/// Reports an error if the index doesn't maintain a key-to-slot lookup table.
+bool missing_key_lookups_(index_dense_t const* index, usearch_error_t* error) {
+    if (index->config().enable_key_lookups)
+        return false;
+    if (error)
+        *error = "Key lookups are disabled for this index!";
+    return true;
+}
+
 extern "C" {
 
 USEARCH_EXPORT char const* usearch_version(void) {
@@ -402,6 +411,12 @@ USEARCH_EXPORT void usearch_change_metric(usearch_index_t index, usearch_metric_
         *error = "Failed to grow cast buffer for the new metric!";
 }
 
+USEARCH_EXPORT void usearch_change_key_lookups(usearch_index_t index, bool enabled, usearch_error_t* error) {
+    USEARCH_ASSERT(index && error && "Missing arguments");
+    if (!reinterpret_cast<index_dense_t*>(index)->try_change_key_lookups(enabled))
+        *error = "Key lookups can only be changed while the index is empty!";
+}
+
 USEARCH_EXPORT void usearch_reserve(usearch_index_t index, size_t capacity, usearch_error_t* error) {
     USEARCH_ASSERT(index && error && "Missing arguments");
     if (!reinterpret_cast<index_dense_t*>(index)->try_reserve(capacity))
@@ -418,13 +433,17 @@ USEARCH_EXPORT void usearch_add(                                                
         *error = result.error.release();
 }
 
-USEARCH_EXPORT bool usearch_contains(usearch_index_t index, usearch_key_t key, usearch_error_t*) {
+USEARCH_EXPORT bool usearch_contains(usearch_index_t index, usearch_key_t key, usearch_error_t* error) {
     USEARCH_ASSERT(index && "Missing arguments");
+    if (missing_key_lookups_(reinterpret_cast<index_dense_t*>(index), error))
+        return false;
     return reinterpret_cast<index_dense_t*>(index)->contains(key);
 }
 
-USEARCH_EXPORT size_t usearch_count(usearch_index_t index, usearch_key_t key, usearch_error_t*) {
+USEARCH_EXPORT size_t usearch_count(usearch_index_t index, usearch_key_t key, usearch_error_t* error) {
     USEARCH_ASSERT(index && "Missing arguments");
+    if (missing_key_lookups_(reinterpret_cast<index_dense_t*>(index), error))
+        return 0;
     return reinterpret_cast<index_dense_t*>(index)->count(key);
 }
 
@@ -463,15 +482,19 @@ USEARCH_EXPORT size_t usearch_filtered_search(                                 /
 
 USEARCH_EXPORT size_t usearch_get(                          //
     usearch_index_t index, usearch_key_t key, size_t count, //
-    void* vectors, usearch_scalar_kind_t kind, usearch_error_t*) {
+    void* vectors, usearch_scalar_kind_t kind, usearch_error_t* error) {
 
     USEARCH_ASSERT(index && vectors);
+    if (missing_key_lookups_(reinterpret_cast<index_dense_t*>(index), error))
+        return 0;
     return get_(reinterpret_cast<index_dense_t*>(index), key, count, vectors, scalar_kind_to_cpp(kind));
 }
 
 USEARCH_EXPORT size_t usearch_remove(usearch_index_t index, usearch_key_t key, usearch_error_t* error) {
 
     USEARCH_ASSERT(index && error && "Missing arguments");
+    if (missing_key_lookups_(reinterpret_cast<index_dense_t*>(index), error))
+        return 0;
     labeling_result_t result = reinterpret_cast<index_dense_t*>(index)->remove(key);
     if (!result)
         *error = result.error.release();
@@ -482,6 +505,8 @@ USEARCH_EXPORT size_t usearch_rename( //
     usearch_index_t index, usearch_key_t from, usearch_key_t to, usearch_error_t* error) {
 
     USEARCH_ASSERT(index && error && "Missing arguments");
+    if (missing_key_lookups_(reinterpret_cast<index_dense_t*>(index), error))
+        return 0;
     labeling_result_t result = reinterpret_cast<index_dense_t*>(index)->rename(from, to);
     if (!result)
         *error = result.error.release();
